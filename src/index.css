@@ -1,0 +1,94 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=DM+Serif+Display&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 80 25% 97%;
+    --foreground: 160 20% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 160 20% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 160 20% 12%;
+    --primary: 152 44% 42%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 80 20% 92%;
+    --secondary-foreground: 160 20% 20%;
+    --muted: 80 15% 94%;
+    --muted-foreground: 160 10% 45%;
+    --accent: 32 60% 52%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 80 15% 88%;
+    --input: 80 15% 88%;
+    --ring: 152 44% 42%;
+    --radius: 0.75rem;
+    --font-heading: 'DM Serif Display', serif;
+    --font-body: 'DM Sans', sans-serif;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground; font-family: var(--font-body); }
+  h1, h2, h3, h4 { font-family: var(--font-heading); }
+}
+
+@layer utilities {
+  .gradient-hero {
+    background: linear-gradient(135deg, hsl(152 44% 42% / 0.08), hsl(32 60% 52% / 0.06), hsl(260 40% 65% / 0.05));
+  }
+  .gradient-card-sage { background: linear-gradient(135deg, hsl(152 30% 92%), hsl(152 20% 96%)); }
+  .gradient-card-warm { background: linear-gradient(135deg, hsl(32 40% 94%), hsl(32 30% 97%)); }
+  .gradient-card-lavender { background: linear-gradient(135deg, hsl(260 30% 94%), hsl(260 20% 97%)); }
+  .gradient-card-sky { background: linear-gradient(135deg, hsl(200 40% 94%), hsl(200 30% 97%)); }
+}
+
+/* ── iOS-style enhancements ── */
+@layer utilities {
+  /* Smooth tap highlight removal (iOS feel) */
+  button, a { -webkit-tap-highlight-color: transparent; }
+
+  /* iOS spring transitions */
+  .ios-spring { transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1); }
+  .ios-spring:active { transform: scale(0.96); }
+
+  /* Frosted glass card */
+  .glass-card {
+    background: hsl(var(--card) / 0.85);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border: 1px solid hsl(var(--border) / 0.7);
+  }
+
+  /* Pill badge */
+  .pill-badge {
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+
+  /* Deeper card shadow for lifted look */
+  .card-lifted {
+    box-shadow: 0 2px 8px hsl(160 20% 12% / 0.06), 0 0 0 1px hsl(var(--border));
+  }
+}
+
+/* Smooth scrolling */
+html { scroll-behavior: smooth; }
+
+/* Scrollbar thin (iOS-like) */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 99px; }
+
+/* Input autofill fix */
+input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 50px hsl(var(--background)) inset;
+  -webkit-text-fill-color: hsl(var(--foreground));
+}
