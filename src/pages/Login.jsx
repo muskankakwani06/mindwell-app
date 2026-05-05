@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Heart } from "lucide-react";
-import { useAuth } from "../context/AuthContext";
+import { auth } from "../lib/firebase";
+import { signInWithEmailAndPassword } from "firebase/auth";
 
 export default function Login() {
-  const { login } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -15,17 +16,10 @@ export default function Login() {
     setError("");
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error || "Login failed"); setLoading(false); return; }
-      login(data.user);
+      await signInWithEmailAndPassword(auth, email, password);
       navigate("/dashboard");
-    } catch {
-      setError("Could not connect to server. Is the backend running?");
+    } catch (err) {
+      setError("Invalid email or password. Please try again.");
       setLoading(false);
     }
   };
@@ -49,6 +43,12 @@ export default function Login() {
             <label className="block text-sm font-medium text-foreground mb-1.5">Email</label>
             <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
+              className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1.5">Password</label>
+            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
               className="w-full rounded-xl border border-border bg-background px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
           </div>
           <button type="submit" disabled={loading}

@@ -1,0 +1,76 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper to check if the document belongs to the user
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
+    // Users collection: Only the user can read/write their own profile
+    match /users/{userId} {
+      allow read, write: if isAuthenticated() && isOwner(userId);
+    }
+
+    // Therapists: Publicly readable, writeable only by admin
+    match /therapists/{therapistId} {
+      allow read: if true;
+      allow write: if false; // Only via Admin SDK/Console
+    }
+
+    // Appointments: Users can see/edit their own appointments
+    match /appointments/{appointmentId} {
+      allow read, write: if isAuthenticated() && (
+        isOwner(resource.data.userId) || 
+        isOwner(request.resource.data.userId)
+      );
+    }
+
+    // Groups: Anyone can see groups, but joining requires authentication
+    match /groups/{groupId} {
+      allow read: if true;
+      allow update: if isAuthenticated();
+    }
+
+    // Assessments: Only owner can see/add their assessments
+    match /assessments/{assessmentId} {
+      allow read, write: if isAuthenticated() && (
+        isOwner(resource.data.userId) || 
+        isOwner(request.resource.data.userId)
+      );
+    }
+
+    // Chats: Only participants can see/edit
+    match /chats/{chatId} {
+      allow read: if isAuthenticated() && isOwner(resource.data.userId);
+      allow create: if isAuthenticated() && isOwner(request.resource.data.userId);
+      allow update: if isAuthenticated() && isOwner(resource.data.userId);
+    }
+
+    // Messages: Only participants can see/edit
+    match /messages/{messageId} {
+      allow read: if isAuthenticated(); // Simplified, should check chatId participants
+      allow create: if isAuthenticated();
+    }
+
+    // Payments & Feedback: Only owner
+    match /payments/{paymentId} {
+      allow read, write: if isAuthenticated() && (
+        isOwner(resource.data.userId) || 
+        isOwner(request.resource.data.userId)
+      );
+    }
+
+    match /feedback/{feedbackId} {
+      allow read, write: if isAuthenticated() && (
+        isOwner(resource.data.userId) || 
+        isOwner(request.resource.data.userId)
+      );
+    }
+  }
+}

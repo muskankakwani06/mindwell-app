@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { CreditCard, Smartphone, Banknote, CheckCircle, Clock, XCircle, IndianRupee } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { db } from "../lib/firebase";
+import { collection, query, where, onSnapshot, addDoc, orderBy, serverTimestamp } from "firebase/firestore";
 
 const MODES = [
   { id: "UPI",  label: "UPI",         icon: Smartphone,  desc: "Google Pay, PhonePe, Paytm" },
@@ -24,14 +26,16 @@ export default function Payment() {
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
 
-  const loadHistory = () => {
-    fetch(`/api/payment?userId=${user.userId}`)
-      .then((r) => r.json())
-      .then((d) => { setHistory(Array.isArray(d) ? d : []); setLoading(false); })
-      .catch(() => setLoading(false));
-  };
-
-  useEffect(() => { loadHistory(); }, [user]);
+  useEffect(() => {
+    if (!user?.uid) return;
+    const q = query(collection(db, "payments"), where("userId", "==", user.uid));
+    const unsubscribe = onSnapshot(q, (snap) => {
+      setHistory(snap.docs.map(d => ({ Payment_ID: d.id, ...d.data() }))
+        .sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)));
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, [user?.uid]);
 
   const pay = async () => {
     if (!amount || isNaN(amount) || Number(amount) <= 0) { showToast("Enter a valid amount"); return; }
@@ -39,16 +43,16 @@ export default function Payment() {
     if (mode === "Card" && cardNum.replace(/\s/g, "").length < 12) { showToast("Enter a valid card number"); return; }
     setPaying(true);
     try {
-      const r = await fetch("/api/payment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.userId, amount: Number(amount), paymentMode: mode }),
+      await addDoc(collection(db, "payments"), {
+        userId: user.uid,
+        Amount: Number(amount),
+        Payment_Mode: mode,
+        Status: "Completed",
+        timestamp: serverTimestamp(),
+        Date: new Date().toISOString()
       });
-      const d = await r.json();
-      if (d.error) { showToast(d.error); setPaying(false); return; }
       setSuccess(true);
       setAmount(""); setUpiId(""); setCardNum("");
-      loadHistory();
       setTimeout(() => setSuccess(false), 4000);
     } catch { showToast("Payment failed. Try again."); }
     setPaying(false);

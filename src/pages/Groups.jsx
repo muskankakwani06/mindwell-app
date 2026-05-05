@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Users, Calendar, CheckCircle } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { db } from "../lib/firebase";
+import { collection, onSnapshot, updateDoc, doc, arrayUnion, arrayRemove } from "firebase/firestore";
 
 const FOCUS_COLORS = {
   Stress:      "bg-blue-100 text-blue-700",
@@ -13,75 +15,47 @@ export default function Groups() {
   const { user } = useAuth();
   const [groups,         setGroups]         = useState([]);
   const [loading,        setLoading]        = useState(true);
-  const [actionId,       setActionId]       = useState(null);   // which card is mid-request
-  const [joinedIds,      setJoinedIds]      = useState(new Set()); // instant local state
+  const [actionId,       setActionId]       = useState(null);
+  const [joinedIds,      setJoinedIds]      = useState(new Set());
 
-  /* ── fetch groups from server ── */
-  const loadGroups = () => {
-    fetch(`/api/groups?userId=${user.userId}`)
-      .then(r => r.json())
-      .then(data => {
-        const arr = Array.isArray(data) ? data : [];
-        setGroups(arr);
-        // sync joined set with DB truth
-        setJoinedIds(new Set(
-          arr.filter(g => Number(g.joined) >= 1).map(g => g.Group_ID)
-        ));
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  };
+  useEffect(() => {
+    if (!user?.uid) return;
+    const unsubscribe = onSnapshot(collection(db, "groups"), (snap) => {
+      const arr = snap.docs.map(d => ({ 
+        Group_ID: d.id, 
+        ...d.data(),
+        member_count: d.data().members?.length || 0,
+        joined: d.data().members?.includes(user.uid) ? 1 : 0
+      }));
+      setGroups(arr);
+      setJoinedIds(new Set(arr.filter(g => g.joined).map(g => g.Group_ID)));
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, [user?.uid]);
 
-  useEffect(() => { loadGroups(); }, [user.userId]);
-
-  /* ── JOIN ── */
   const handleJoin = async (groupId) => {
-    // 1. Instantly show "Joined" on the card
-    setJoinedIds(prev => new Set([...prev, groupId]));
     setActionId(groupId);
-
     try {
-      const res = await fetch("/api/groups/join", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ userId: user.userId, groupId }),
+      await updateDoc(doc(db, "groups", groupId), {
+        members: arrayUnion(user.uid)
       });
-
-      if (res.ok) {
-        loadGroups(); // re-sync member count
-        window.dispatchEvent(new CustomEvent("groups-changed")); // refresh dashboard count
-      } else {
-        // rollback
-        setJoinedIds(prev => { const s = new Set(prev); s.delete(groupId); return s; });
-      }
-    } catch {
-      setJoinedIds(prev => { const s = new Set(prev); s.delete(groupId); return s; });
+      window.dispatchEvent(new CustomEvent("groups-changed"));
+    } catch (err) {
+      console.error("Error joining group:", err);
     }
     setActionId(null);
   };
 
-  /* ── LEAVE ── */
   const handleLeave = async (groupId) => {
-    // 1. Instantly remove "Joined" badge
-    setJoinedIds(prev => { const s = new Set(prev); s.delete(groupId); return s; });
     setActionId(groupId);
-
     try {
-      const res = await fetch("/api/groups/leave", {
-        method:  "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ userId: user.userId, groupId }),
+      await updateDoc(doc(db, "groups", groupId), {
+        members: arrayRemove(user.uid)
       });
-
-      if (res.ok) {
-        loadGroups();
-        window.dispatchEvent(new CustomEvent("groups-changed"));
-      } else {
-        // rollback
-        setJoinedIds(prev => new Set([...prev, groupId]));
-      }
-    } catch {
-      setJoinedIds(prev => new Set([...prev, groupId]));
+      window.dispatchEvent(new CustomEvent("groups-changed"));
+    } catch (err) {
+      console.error("Error leaving group:", err);
     }
     setActionId(null);
   };

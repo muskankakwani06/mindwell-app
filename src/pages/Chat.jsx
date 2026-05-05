@@ -1,7 +1,9 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 import { MessageCircle, Send, ArrowLeft } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { Link } from "react-router-dom";
+import { db } from "../lib/firebase";
+import { collection, query, where, onSnapshot, addDoc, orderBy, serverTimestamp, updateDoc, doc } from "firebase/firestore";
 
 export default function Chat() {
   const { user } = useAuth();
@@ -15,46 +17,36 @@ export default function Chat() {
   const [mobileView, setMobileView] = useState("list");
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
-  const pollingRef = useRef(null);
-  const activeChatRef = useRef(null);
-  const isSendingRef = useRef(false);
 
-  useEffect(() => { activeChatRef.current = activeChat; }, [activeChat]);
-
-  const loadChats = useCallback(() => {
-    fetch(`/api/chat?userId=${user.userId}`)
-      .then((r) => r.json())
-      .then((d) => { setChats(Array.isArray(d) ? d : []); setLoadingChats(false); })
-      .catch(() => setLoadingChats(false));
-  }, [user.userId]);
-
-  useEffect(() => { loadChats(); }, [loadChats]);
-
-  const fetchMessages = useCallback((chatId, silent = false) => {
-    if (!silent) setLoadingMessages(true);
-    return fetch(`/api/chat/messages/${chatId}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (activeChatRef.current?.Chat_ID === chatId) {
-          setMessages(Array.isArray(d) ? d : []);
-        }
-        if (!silent) setLoadingMessages(false);
-      })
-      .catch(() => { if (!silent) setLoadingMessages(false); });
-  }, []);
-
-  // Start/stop polling when activeChat changes
+  // Load chats (conversations)
   useEffect(() => {
-    clearInterval(pollingRef.current);
-    if (!activeChat) return;
-    fetchMessages(activeChat.Chat_ID);
-    pollingRef.current = setInterval(() => {
-      if (!isSendingRef.current && activeChatRef.current) {
-        fetchMessages(activeChatRef.current.Chat_ID, true);
-      }
-    }, 3000);
-    return () => clearInterval(pollingRef.current);
-  }, [activeChat, fetchMessages]);
+    if (!user?.uid) return;
+    const q = query(collection(db, "chats"), where("userId", "==", user.uid));
+    const unsubscribe = onSnapshot(q, (snap) => {
+      setChats(snap.docs.map(d => ({ Chat_ID: d.id, ...d.data() })));
+      setLoadingChats(false);
+    });
+    return () => unsubscribe();
+  }, [user?.uid]);
+
+  // Load messages for active chat
+  useEffect(() => {
+    if (!activeChat) {
+      setMessages([]);
+      return;
+    }
+    setLoadingMessages(true);
+    const q = query(
+      collection(db, "messages"),
+      where("chatId", "==", activeChat.Chat_ID),
+      orderBy("timestamp", "asc")
+    );
+    const unsubscribe = onSnapshot(q, (snap) => {
+      setMessages(snap.docs.map(d => ({ Message_ID: d.id, ...d.data() })));
+      setLoadingMessages(false);
+    });
+    return () => unsubscribe();
+  }, [activeChat]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -63,7 +55,6 @@ export default function Chat() {
 
   const openChat = (chat) => {
     setActiveChat(chat);
-    setMessages([]);
     setInput("");
     setMobileView("chat");
     setTimeout(() => inputRef.current?.focus(), 100);
@@ -76,50 +67,23 @@ export default function Chat() {
 
     setInput("");
     setSending(true);
-    isSendingRef.current = true;
-
-    // Optimistic message — show immediately as "user" bubble
-    const tempId = `temp_${Date.now()}`;
-    setMessages((prev) => [
-      ...prev,
-      { Message_ID: tempId, Message_Text: text, Sender_Type: "user", _pending: true },
-    ]);
-
     try {
-      const res = await fetch("/api/chat/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, messageText: text, senderType: "user" }),
+      await addDoc(collection(db, "messages"), {
+        chatId,
+        Message_Text: text,
+        Sender_Type: "user",
+        timestamp: serverTimestamp()
       });
 
-      if (res.ok) {
-        // Replace optimistic message with confirmed server data
-        const data = await fetch(`/api/chat/messages/${chatId}`).then((r) => r.json());
-        if (activeChatRef.current?.Chat_ID === chatId) {
-          setMessages(Array.isArray(data) ? data : []);
-        }
-        loadChats();
-      } else {
-        const errData = await res.json().catch(() => ({}));
-        console.error("Send failed:", errData.error);
-        // Keep optimistic message visible but mark as failed
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.Message_ID === tempId ? { ...m, _failed: true, _pending: false } : m
-          )
-        );
-      }
+      // Update last message in chat metadata
+      await updateDoc(doc(db, "chats", chatId), {
+        last_message: text,
+        last_updated: serverTimestamp()
+      });
     } catch (err) {
       console.error("Send error:", err);
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.Message_ID === tempId ? { ...m, _failed: true, _pending: false } : m
-        )
-      );
     }
-
     setSending(false);
-    isSendingRef.current = false;
     inputRef.current?.focus();
   };
 
@@ -229,7 +193,7 @@ export default function Chat() {
                   </div>
                 ) : messages.length === 0 ? (
                   <div className="text-center py-10">
-                    <p className="text-xs text-muted-foreground">No messages yet. Say hello! 👋</p>
+                    <p className="text-xs text-muted-foreground">No messages yet. Say hello!</p>
                   </div>
                 ) : (
                   messages.map((m) => {

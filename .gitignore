@@ -1,8 +1,46 @@
-node_modules
-.DS_Store
-dist
-dist-ssr
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+**/node_modules/
+
+# Production / Build
+dist/
+dist-ssr/
+build/
+.next/
+out/
+
+# Firebase
+.firebase/
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+mindwell_flutter/build/
+mindwell_flutter/.idea/
+mindwell_flutter/.dart_tool/
+
+# Scratch & Temporary
+scratch/
 *.local
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*.iml
+
+# Env
 .env
-.env.*
-server/node_modules
+.env.local
+.env.*.local

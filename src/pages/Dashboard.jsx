@@ -1,40 +1,75 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Calendar, Brain, MessageCircle, Clock, Users, CreditCard, RefreshCw, IndianRupee, Github, Linkedin } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { db } from "../lib/firebase";
+import { collection, query, where, getDocs, limit, orderBy } from "firebase/firestore";
 
 export default function Dashboard() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [lastUpdated, setLastUpdated] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(new Date());
 
-  const fetchData = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true); else setRefreshing(true);
+  const fetchData = async () => {
+    if (!user?.uid) return;
+    setRefreshing(true);
     try {
-      const r = await fetch(`/api/dashboard?userId=${user.userId}`);
-      const d = await r.json();
-      if (!d.error) { setData(d); setLastUpdated(new Date()); }
-    } catch {}
-    setLoading(false); setRefreshing(false);
-  }, [user.userId]);
+      // 1. Fetch Stats
+      const stats = { sessions: 0, assessments: 0, groups: 0, upcoming: 0, payments: 0 };
+      
+      // Get Appointments count
+      const apptsSnap = await getDocs(query(collection(db, "appointments"), where("userId", "==", user.uid)));
+      stats.upcoming = apptsSnap.docs.filter(d => new Date(d.data().date) >= new Date()).length;
+      stats.sessions = apptsSnap.docs.filter(d => d.data().status === "completed").length;
 
-  // Initial load
-  useEffect(() => { fetchData(); }, [fetchData]);
+      // Get Assessments count
+      const assessmentsSnap = await getDocs(query(collection(db, "assessments"), where("userId", "==", user.uid)));
+      stats.assessments = assessmentsSnap.size;
 
-  // Auto-refresh every 30 seconds
+      // Get Groups count
+      const groupsSnap = await getDocs(query(collection(db, "groups"), where("members", "array-contains", user.uid)));
+      stats.groups = groupsSnap.size;
+
+      // Get Payments count
+      const paymentsSnap = await getDocs(query(collection(db, "payments"), where("userId", "==", user.uid)));
+      stats.payments = paymentsSnap.size;
+
+      // 2. Fetch Recent Data
+      const recentAssessments = assessmentsSnap.docs
+        .map(d => ({ Assessment_ID: d.id, ...d.data() }))
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .slice(0, 3);
+
+      const upcomingAppointments = apptsSnap.docs
+        .map(d => ({ Appointment_ID: d.id, ...d.data() }))
+        .filter(a => new Date(a.date) >= new Date())
+        .sort((a, b) => new Date(a.date) - new Date(b.date))
+        .slice(0, 3);
+
+      const recentPayments = paymentsSnap.docs
+        .map(d => ({ Payment_ID: d.id, ...d.data() }))
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .slice(0, 3);
+
+      setData({
+        stats,
+        recentAssessments,
+        upcomingAppointments,
+        recentPayments
+      });
+      setLastUpdated(new Date());
+    } catch (error) {
+      console.error("Error fetching dashboard data:", error);
+    }
+    setLoading(false);
+    setRefreshing(false);
+  };
+
   useEffect(() => {
-    const id = setInterval(() => fetchData(true), 30000);
-    return () => clearInterval(id);
-  }, [fetchData]);
-
-  // Instant refresh when user joins/leaves a group on the Groups page
-  useEffect(() => {
-    const handler = () => fetchData(true);
-    window.addEventListener("groups-changed", handler);
-    return () => window.removeEventListener("groups-changed", handler);
-  }, [fetchData]);
+    fetchData();
+  }, [user?.uid]);
 
   if (loading) return (
     <div className="container mx-auto py-8 px-4 flex items-center justify-center min-h-[60vh]">
@@ -56,11 +91,11 @@ export default function Dashboard() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl text-foreground" style={{ fontFamily: "var(--font-heading)" }}>
-            Welcome back, {user.name} 👋
+            Welcome back, {user?.name || "User"}
           </h1>
           <p className="text-muted-foreground text-sm mt-1">Here's your wellness overview</p>
         </div>
-        <button onClick={() => fetchData(true)} disabled={refreshing}
+        <button onClick={() => fetchData()} disabled={refreshing}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border text-xs text-muted-foreground hover:bg-muted transition disabled:opacity-50 shrink-0 mt-1">
           <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
           {lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}` : "Refresh"}

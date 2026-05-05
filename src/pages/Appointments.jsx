@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Calendar, Clock, Phone, Trash2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { Link } from "react-router-dom";
+import { db } from "../lib/firebase";
+import { collection, query, where, onSnapshot, deleteDoc, doc } from "firebase/firestore";
 
 export default function Appointments() {
   const { user } = useAuth();
@@ -9,24 +11,24 @@ export default function Appointments() {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState("");
 
-  const load = () => {
-    fetch(`/api/appointments?userId=${user.userId}`)
-      .then((r) => r.json())
-      .then((d) => { setAppointments(Array.isArray(d) ? d : []); setLoading(false); })
-      .catch(() => setLoading(false));
-  };
-
-  useEffect(() => { load(); }, [user]);
+  useEffect(() => {
+    if (!user?.uid) return;
+    const q = query(collection(db, "appointments"), where("userId", "==", user.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setAppointments(snapshot.docs.map(d => ({ Appointment_ID: d.id, ...d.data() })));
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, [user?.uid]);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
 
   const handleCancel = async (id) => {
     if (!window.confirm("Cancel this appointment?")) return;
     try {
-      const res = await fetch(`/api/appointments/${id}`, { method: "DELETE" });
-      if (res.ok) { showToast("Appointment cancelled"); load(); }
-      else showToast("Failed to cancel");
-    } catch { showToast("Connection error"); }
+      await deleteDoc(doc(db, "appointments", id));
+      showToast("Appointment cancelled");
+    } catch { showToast("Failed to cancel"); }
   };
 
   const today = new Date().toISOString().split("T")[0];

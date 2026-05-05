@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { Star, Send, Trash2, CheckCircle } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { db } from "../lib/firebase";
+import { collection, query, where, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
 
 export default function Feedback() {
   const { user } = useAuth();
@@ -15,28 +17,31 @@ export default function Feedback() {
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
 
-  const loadHistory = () => {
-    fetch(`/api/feedback?userId=${user.userId}`)
-      .then((r) => r.json())
-      .then((d) => { setHistory(Array.isArray(d) ? d : []); setLoading(false); })
-      .catch(() => setLoading(false));
-  };
-
-  useEffect(() => { loadHistory(); }, [user]);
+  useEffect(() => {
+    if (!user?.uid) return;
+    const q = query(collection(db, "feedback"), where("userId", "==", user.uid));
+    const unsubscribe = onSnapshot(q, (snap) => {
+      setHistory(snap.docs.map(d => ({ Feedback_ID: d.id, ...d.data() }))
+        .sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)));
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, [user?.uid]);
 
   const submit = async () => {
     if (!rating) { showToast("Please select a star rating"); return; }
     setSubmitting(true);
     try {
-      await fetch("/api/feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.userId, rating, feedbackText }),
+      await addDoc(collection(db, "feedback"), {
+        userId: user.uid,
+        Rating: rating,
+        Feedback_Text: feedbackText,
+        Date: new Date().toISOString(),
+        timestamp: serverTimestamp()
       });
       setSubmitted(true);
       setRating(0);
       setFeedbackText("");
-      loadHistory();
       setTimeout(() => setSubmitted(false), 3000);
     } catch {
       showToast("Something went wrong. Try again.");
@@ -46,8 +51,7 @@ export default function Feedback() {
 
   const deleteFeedback = async (id) => {
     try {
-      await fetch(`/api/feedback/${id}`, { method: "DELETE" });
-      setHistory((prev) => prev.filter((f) => f.Feedback_ID !== id));
+      await deleteDoc(doc(db, "feedback", id));
       showToast("Feedback deleted");
     } catch {
       showToast("Couldn't delete. Try again.");

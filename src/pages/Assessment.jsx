@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { Brain, CheckCircle } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { db } from "../lib/firebase";
+import { collection, query, where, onSnapshot, addDoc } from "firebase/firestore";
 
 const TESTS = {
   "Depression Test": {
@@ -76,11 +78,14 @@ export default function Assessment() {
   const [toast, setToast] = useState("");
 
   useEffect(() => {
-    fetch(`/api/assessments?userId=${user.userId}`)
-      .then((r) => r.json())
-      .then((d) => setHistory(Array.isArray(d) ? d : []))
-      .catch(() => {});
-  }, [user]);
+    if (!user?.uid) return;
+    const q = query(collection(db, "assessments"), where("userId", "==", user.uid));
+    const unsubscribe = onSnapshot(q, (snap) => {
+      setHistory(snap.docs.map(d => ({ Assessment_ID: d.id, ...d.data() }))
+        .sort((a, b) => new Date(b.date) - new Date(a.date)));
+    });
+    return () => unsubscribe();
+  }, [user?.uid]);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
 
@@ -103,14 +108,16 @@ export default function Assessment() {
     setResult({ total, remarks });
     setSaving(true);
     try {
-      await fetch("/api/assessments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: user.userId, assessmentType: selected, remarks }),
+      await addDoc(collection(db, "assessments"), {
+        userId: user.uid,
+        Assessment_Type: selected,
+        Remarks: remarks,
+        totalScore: total,
+        date: new Date().toISOString()
       });
-      const d = await fetch(`/api/assessments?userId=${user.userId}`).then((r) => r.json());
-      setHistory(Array.isArray(d) ? d : []);
-    } catch {}
+    } catch (err) {
+      console.error("Error saving assessment:", err);
+    }
     setSaving(false);
   };
 

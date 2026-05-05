@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Star, X, Calendar, Clock, Phone } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { db } from "../lib/firebase";
+import { collection, getDocs, addDoc } from "firebase/firestore";
 
 const TIME_SLOTS = ["09:00", "10:00", "11:00", "12:00", "14:00", "15:00", "16:00", "17:00"];
 
@@ -15,9 +17,11 @@ export default function Therapists() {
   const [toast, setToast] = useState("");
 
   useEffect(() => {
-    fetch("/api/therapists")
-      .then((r) => r.json())
-      .then((d) => { setTherapists(d); setLoading(false); })
+    getDocs(collection(db, "therapists"))
+      .then((snap) => {
+        setTherapists(snap.docs.map(d => ({ Therapist_ID: d.id, ...d.data() })));
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
   }, []);
 
@@ -35,15 +39,20 @@ export default function Therapists() {
     if (!date || !time) { showToast("Please select a date and time"); return; }
     setBooking(true);
     try {
-      const res = await fetch("/api/appointments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, time: time + ":00", userId: user.userId, therapistId: modal.Therapist_ID }),
+      await addDoc(collection(db, "appointments"), {
+        date,
+        time: time + ":00",
+        userId: user.uid,
+        therapistId: modal.Therapist_ID,
+        therapist_name: modal.Name,
+        Specialization: modal.Specialization,
+        status: "upcoming"
       });
-      const data = await res.json();
-      if (res.ok) { showToast("✅ Appointment booked!"); setModal(null); }
-      else showToast("❌ " + (data.error || "Booking failed"));
-    } catch { showToast("❌ Could not connect to server"); }
+      showToast("✅ Appointment booked!");
+      setModal(null);
+    } catch {
+      showToast("❌ Booking failed");
+    }
     setBooking(false);
   };
 
@@ -62,32 +71,34 @@ export default function Therapists() {
 
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
         {therapists.map((t) => {
-          const initials = t.Name.split(" ").filter(Boolean).slice(-2).map((n) => n[0]).join("");
+          const name = t.Name || t.name || "Therapist";
+          const spec = t.Specialization || t.specialization || "";
+          const initials = name.split(" ").filter(Boolean).slice(-2).map((n) => n[0]).join("");
           return (
             <div key={t.Therapist_ID} className="bg-[hsl(var(--card))] rounded-2xl border border-border p-6 hover:shadow-lg transition-shadow">
               <div className="flex items-center gap-4 mb-4">
                 <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg">{initials}</div>
                 <div>
-                  <h3 className="font-medium text-foreground" style={{ fontFamily: "var(--font-heading)" }}>{t.Name}</h3>
-                  <p className="text-sm text-muted-foreground">{t.Specialization}</p>
+                  <h3 className="font-medium text-foreground" style={{ fontFamily: "var(--font-heading)" }}>{name}</h3>
+                  <p className="text-sm text-muted-foreground">{spec}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 mb-1 text-sm text-muted-foreground">
-                {t.avg_rating ? (
+                {(t.Rating || t.Rating === 0) ? (
                   <span className="flex items-center gap-1">
                     <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
-                    {t.avg_rating} ({t.review_count} review{t.review_count !== 1 ? "s" : ""})
+                    {t.Rating} ({t.ReviewCount || 0} reviews)
                   </span>
                 ) : (
                   <span className="text-xs text-muted-foreground">No reviews yet</span>
                 )}
               </div>
-              {t.Phone && (
+              {(t.Phone || t.phone) && (
                 <div className="flex items-center gap-1 text-xs text-muted-foreground mb-4">
-                  <Phone className="w-3 h-3" /> {t.Phone}
+                  <Phone className="w-3 h-3" /> {t.Phone || t.phone}
                 </div>
               )}
-              <button onClick={() => openModal(t)}
+              <button onClick={() => openModal({ ...t, Name: name, Specialization: spec })}
                 className="w-full py-2.5 rounded-xl text-sm font-medium bg-primary text-[hsl(var(--primary-foreground))] hover:opacity-90 transition">
                 Book Session
               </button>

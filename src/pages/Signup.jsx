@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Heart } from "lucide-react";
-import { useAuth } from "../context/AuthContext";
+import { auth, db } from "../lib/firebase";
+import { createUserWithEmailAndPassword } from "firebase/auth";
+import { doc, setDoc } from "firebase/firestore";
 
 export default function Signup() {
-  const { login } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: "", email: "", phone: "" });
+  const [form, setForm] = useState({ name: "", email: "", phone: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -15,17 +16,19 @@ export default function Signup() {
     setError("");
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+      const { user } = await createUserWithEmailAndPassword(auth, form.email, form.password);
+      
+      // Save user details to Firestore
+      await setDoc(doc(db, "users", user.uid), {
+        name: form.name,
+        email: form.email,
+        phone: form.phone,
+        createdAt: new Date().toISOString()
       });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error || "Registration failed"); setLoading(false); return; }
-      login(data.user);
+
       navigate("/dashboard");
-    } catch {
-      setError("Could not connect to server. Is the backend running?");
+    } catch (err) {
+      setError(err.message || "Registration failed");
       setLoading(false);
     }
   };
@@ -58,6 +61,7 @@ export default function Signup() {
           {field("name", "Full Name", "text", "Muskan")}
           {field("email", "Email", "email", "you@example.com")}
           {field("phone", "Phone (optional)", "tel", "9876543210")}
+          {field("password", "Password", "password", "••••••••")}
           <button type="submit" disabled={loading}
             className="w-full py-2.5 rounded-xl bg-primary text-[hsl(var(--primary-foreground))] text-sm font-medium hover:opacity-90 transition disabled:opacity-60">
             {loading ? "Creating account..." : "Create Account"}
